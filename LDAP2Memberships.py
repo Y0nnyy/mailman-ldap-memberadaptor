@@ -50,9 +50,6 @@ from Mailman import Errors
 from Mailman import MemberAdaptor
 from Mailman.Logging.Syslog import syslog
 
-ISREGULAR = 1
-ISDIGEST = 2
-
 DEBUG = False
 
 
@@ -64,10 +61,10 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         self.__updatetime = 0
         self.__ldap_conn = None
 
-        self.__digestmembers = None
         self.__regularmembers = None
-	self.__member_map = {}
-	self.__member_names = {}
+        self.__digestmembers = None
+        self.__member_map = {}
+        self.__member_names = {}
         self.__mod_members = {}
 
     #
@@ -85,25 +82,23 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def __loadmembers(self, result, moderator=False):
         for (dn, attrs) in result:
             if attrs.has_key('mail'):
-                # first mail is special
                 mail = attrs['mail'][0].strip()
-                lce = mail.lower()
                 if moderator:
-                    self.__mod_members[lce] = True
+                    self.__mod_members[dn] = True
                 else:
-                    if lce in self.__mlist.digest_members or not self.__mlist.nondigestable:
-                        self.__digestmembers[lce] = mail
+                    if dn in self.__mlist.digest_members or not self.__mlist.nondigestable:
+                        self.__digestmembers[dn] = mail
                     else:
-                        self.__regularmembers[lce] = mail
+                        self.__regularmembers[dn] = mail
                     if DEBUG:
                         syslog('debug','adding members[lce] = %s' % mail)
                     # mail can have multiple values -- the_olo
                     for maddr in attrs['mail']:
-                        self.__member_map[maddr.strip().lower()] = mail
+                        self.__member_map[maddr.strip().lower()] = dn
                     if self.ldapfullname and attrs.has_key(self.ldapfullname):
-                        # since no surname, use full name if defined
+                        # set full name if defined
                         fullname = attrs[self.ldapfullname][0].decode('utf8')
-                        self.__member_names[lce] = fullname
+                        self.__member_names[dn] = fullname
 
     def __ldap_load_members(self, l=None):
         if ( (self.__regularmembers is None)
@@ -159,14 +154,26 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                                 attr)
             self.__loadmembers(members)
 
+        
+    def __ldap_member_to_key(self, member):
+        key = self.__member_map.get(member.lower(), None)
+        if key:
+            return key
+        # Might alreay be a key ...
+        return member
 
     def __ldap_get_member_cpe(self, member):
         self.__ldap_load_members()
-        return self.__member_map.get(member.lower(), None)
+        member = self.__ldap_member_to_key(member)
+        cpe = self.__regularmembers.get(member, None)
+        if cpe:
+            return cpe
+        return self.__digestmembers.get(member, None)
 
     def __ldap_mail_to_cn(self, member):
         self.__ldap_load_members()
-        return self.__member_names.get(member.lower(), None)
+        member = self.__ldap_member_to_key(member)
+        return self.__member_names.get(member, None)
 
     def __ldap_update_mail(self, member, newaddress):
         l = self.__ldap_bind()
@@ -216,7 +223,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         """Synchronize OldStyle data with LDAP"""
 
         # LDAP list (loads current data from LDAP)
-        ldapMembers = set(self.getMembers())
+        ldapMembers = set(self.__regularmembers.keys() + self.__digestmembers.keys())
         # Old style members
         oldStyleMembers = set(self.__mlist.members.keys() + self.__mlist.digest_members.keys())
         # Members we need to add to the old style storage
@@ -246,19 +253,6 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
            if unlock:
                self.__mlist.Unlock()
 
-    def __getDelivery(self, member):
-        self.__assertIsMember(member)
-        status = self.__mlist.delivery_status.get(
-            member.lower(),
-            # Values are tuples, so the default should also be a tuple.  The
-            # second item will be ignored.
-            (MemberAdaptor.ENABLED, 0))
-        if status[0] == MemberAdaptor.BYADMIN:
-            return status
-        if self.alwaysDeliver:
-            return (MemberAdaptor.ENABLED, 0)
-        return status
-
     def defaults(self):
         """Set default values for options"""
         if not hasattr(self, 'ldapmodgroupdn'):
@@ -270,25 +264,40 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     #
     # Read interface
     #
+            
     def getMembers(self):
         self.__ldap_load_members()
-        return self.__regularmembers.keys() + self.__digestmembers.keys()
+        v = self.__regularmembers.values() + self.__digestmembers.values()
+        if not v:
+            return []
+        return map(str.lower, v)
 
     def getRegularMemberKeys(self):
         self.__ldap_load_members()
-        return self.__regularmembers.keys()
+        v = self.__regularmembers.values()
+        if not v:
+            return []
+        return map(str.lower, v)
 
     def getDigestMemberKeys(self):
         self.__ldap_load_members()
-        return self.__digestmembers.keys()
+        v = self.__digestmembers.values()
+        if not v:
+            return []
+        return map(str.lower, v)
 
     def isMember(self, member):
         self.__ldap_load_members()
-        return self.__member_map.has_key(member.lower())
+        member = self.__ldap_member_to_key(member)
+        return (member in self.__regularmembers) or (member in self.__digestmembers)
+               
+    def __assertIsMember(self, member):
+        if not self.isMember(member):
+            raise Errors.NotAMemberError, member
 
     def getMemberKey(self, member):
         self.__assertIsMember(member)
-        return member
+        return self.__ldap_member_to_key(member)
 
     def getMemberCPAddress(self, member):
         cpaddr = self.__ldap_get_member_cpe(member)
@@ -302,7 +311,8 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def getMemberPassword(self, member):
         self.__syncOldStyleStorage()
 
-        secret = self.__mlist.passwords.get(member.lower())
+        member = self.__ldap_member_to_key(member)
+        secret = self.__mlist.passwords.get(member)
         if secret is None:
             raise Errors.NotAMemberError, member
         return secret
@@ -313,13 +323,10 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
             return secret
         return False
 
-    def __assertIsMember(self, member):
-        if not self.isMember(member):
-            raise Errors.NotAMemberError, member
-
     def getMemberLanguage(self, member):
+        member = self.__ldap_member_to_key(member)
         lang = self.__mlist.language.get(
-            member.lower(), self.__mlist.preferred_language)
+            member, self.__mlist.preferred_language)
         if lang in self.__mlist.GetAvailableLanguages():
             return lang
         return self.__mlist.preferred_language
@@ -327,9 +334,10 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def getMemberOption(self, member, flag):
         self.__assertIsMember(member)
 
+        member = self.__ldap_member_to_key(member)
         if flag == mm_cfg.Digests:
             return member in self.__digestmembers.keys()
-	if flag == mm_cfg.Moderate and self.ldapmodgroupdn:
+        if flag == mm_cfg.Moderate and self.ldapmodgroupdn:
             if member in self.__mod_members:
                  return False
             return self.__mlist.default_member_moderation
@@ -348,7 +356,21 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         self.__assertIsMember(member)
         if self.alwaysDeliver:
              return []
+        member = self.__ldap_member_to_key(member)
         return self.__mlist.topics_userinterest.get(member, [])
+
+    def __getDelivery(self, member):
+        self.__assertIsMember(member)
+        member = self.__ldap_member_to_key(member)
+        status = self.__mlist.delivery_status.get(member,
+            # Values are tuples, so the default should also be a tuple.  The
+            # second item will be ignored.
+            (MemberAdaptor.ENABLED, 0))
+        if status[0] == MemberAdaptor.BYADMIN:
+            return status
+        if self.alwaysDeliver:
+            return (MemberAdaptor.ENABLED, 0)
+        return status
 
     def getDeliveryStatus(self, member):
         return self.__getDelivery(member)[0]
@@ -366,12 +388,14 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def getBouncingMembers(self):
         if self.alwaysDeliver:
              return []
+        member = self.__ldap_member_to_key(member)
         return [member for member in self.__mlist.bounce_info.keys()]
 
     def getBounceInfo(self, member):
         self.__assertIsMember(member)
         if self.alwaysDeliver:
              return None
+        member = self.__ldap_member_to_key(member)
         return self.__mlist.bounce_info.get(member)
 
     #
@@ -394,6 +418,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         self.__assertIsMember(member)
 
         # Get old values
+        member = self.__ldap_member_to_key(member)
         digestsp = self.getMemberOption(member, mm_cfg.Digests)
         password = self.__mlist.passwords.get(member, None)
         lang = self.getMemberLanguage(member)
@@ -426,16 +451,19 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def setMemberPassword(self, memberkey, password):
         assert self.__mlist.Locked()
         self.__assertIsMember(memberkey)
+        memberkey = self.__ldap_member_to_key(memberkey)
         self.__mlist.passwords[memberkey] = password
 
     def setMemberLanguage(self, memberkey, language):
         assert self.__mlist.Locked()
         self.__assertIsMember(memberkey)
+        memberkey = self.__ldap_member_to_key(memberkey)
         self.__mlist.language[memberkey] = language
 
     def setMemberOption(self, member, flag, value):
         assert self.__mlist.Locked()
         self.__assertIsMember(member)
+        member = self.__ldap_member_to_key(member)
         # There's one extra gotcha we have to deal with.  If the user is
         # toggling the Digests flag, then we need to move their entry from
         # mlist.members to mlist.digest_members or vice versa.  Blarg.  Do
@@ -446,13 +474,13 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                 if not self.__mlist.digestable:
                     raise Errors.CantDigestError
                 # The user is turning on digest mode
-                if self.__mlist.digest_members.has_key(member):
+                if self.__digestmembers.has_key(member):
                     raise Errors.AlreadyReceivingDigests, member
-                cpuser = self.__mlist.members.get(member)
+                cpuser = self.__regularmembers.get(member)
                 if cpuser is None:
                     raise Errors.NotAMemberError, member
-                del self.__mlist.members[member]
-                self.__mlist.digest_members[member] = cpuser
+                del self.__regularmembers[member]
+                self.__digestmembers[member] = cpuser
                 # If we recently turned off digest mode and are now
                 # turning it back on, the member may be in one_last_digest.
                 # If so, remove it so the member doesn't get a dup of the
@@ -464,17 +492,19 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                 if not self.__mlist.nondigestable:
                     raise Errors.MustDigestError
                 # The user is turning off digest mode
-                if self.__mlist.members.has_key(member):
+                if self.__regularmembers.has_key(member):
                     raise Errors.AlreadyReceivingRegularDeliveries, member
-                cpuser = self.__mlist.digest_members.get(member)
+                cpuser = self.__digestmembers.get(member)
                 if cpuser is None:
                     raise Errors.NotAMemberError, member
-                del self.__mlist.digest_members[member]
-                self.__mlist.members[member] = cpuser
+                del self.__digestmembers[member]
+                self.__regularmembers[member] = cpuser
                 # When toggling off digest delivery, we want to be sure to set
                 # things up so that the user receives one last digest,
                 # otherwise they may lose some email
                 self.__mlist.one_last_digest[member] = cpuser
+            self.__mlist.members = self.__regularmembers
+            self.__mlist.digest_members = self.__digestmembers
             # We don't need to touch user_options because the digest state
             # isn't kept as a bitfield flag.
             return
@@ -502,6 +532,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
 
         assert self.__mlist.Locked()
         self.__assertIsMember(member)
+        member = self.__ldap_member_to_key(member)
         if topics:
             self.__mlist.topics_userinterest[member] = topics
         # if topics is empty, then delete the entry in this dictionary
@@ -515,8 +546,9 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         if self.alwaysDeliver and status not in (MemberAdaptor.ENABLED, MemberAdaptor.BYADMIN):
              raise NotImplementedError
 
-        self.__assertIsMember(member)
         assert self.__mlist.Locked()
+        self.__assertIsMember(member)
+        member = self.__ldap_member_to_key(member)
         if status == MemberAdaptor.ENABLED:
             # Enable by resetting their bounce info.
             self.setBounceInfo(member, None)
@@ -526,6 +558,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def setBounceInfo(self, member, info):
         assert self.__mlist.Locked()
         self.__assertIsMember(member)
+        assert self.__mlist.Locked()
         if info is None:
             if self.__mlist.bounce_info.has_key(member):
                 del self.__mlist.bounce_info[member]
