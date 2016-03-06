@@ -1,5 +1,5 @@
 # Mailman LDAP Member Adaptor
-A LDAP Membership Adaptor for Mailman
+A LDAP Membership Adaptor for Mailman 2.1
 
 This work is based on https://bugs.launchpad.net/mailman/+bug/558106
 
