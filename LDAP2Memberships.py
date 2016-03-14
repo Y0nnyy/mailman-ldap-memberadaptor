@@ -177,16 +177,8 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
 
     def __ldap_update_mail(self, member, newaddress):
         l = self.__ldap_bind()
+        dn = self.__ldap_member_to_key(member)
         oldaddress = self.getMemberCPAddress(member)
-        try:
-            res = l.search_s(self.ldapbasedn, ldap.SCOPE_SUBTREE, '(&(objectClass=*)(mail='+oldaddress+'))', ['dn'])
-        except ldap.NO_SUCH_OBJECT:
-            syslog('warn',"can't update mail for %s: no such object (accountDisabled?)" % member)
-            return
-        if len(res) != 1:
-            syslog('warn',"can't update mail for %s" % member)
-            return
-        dn = res[0][0]
         modlist = ldap.modlist.modifyModlist({'mail': oldaddress},
                                              {'mail': newaddress})
         l.modify_s(dn, modlist)
