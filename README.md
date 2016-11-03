@@ -47,14 +47,12 @@ def extend(list):
 
 1. This module does not support for adding/remove users.
 
-2. Bounce processing is only partially supported not supported.  If
-   `alwaysDeliver` is set to `False`, users will be deactivated but not
-   removed (see 1.). If it is set to `True` bounce processing is completely
-   disabled.
+2. Bounce processing is only partially supported.  If `alwaysDeliver` is
+   set to `False`, users will be deactivated but not removed (see 1.).
+   If it is set to `True` bounce processing is completely disabled.
 
-3. The Mailman Web interface does not detect that we implement that we do
-   not implement the add/remove function and will show a useless error
-   message.
+3. The Mailman Web interface does not detect that we do not implement the
+   add/remove function and will show a useless error message.
 
 4. The LDAP settings themselves (e.g. ldapsearch) are only administrable
    by editing extend.py, not over the Web.
