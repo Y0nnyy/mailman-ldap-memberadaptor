@@ -67,6 +67,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         self.__member_names = {}
         self.__mod_members = {}
 
+
     #
     # LDAP utility functions
     #
@@ -141,7 +142,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                         try:
                             res2 = l.search_s(self.ldapbasedn,
                                               ldap.SCOPE_SUBTREE,
-                                              '(&(objectClass=*)('+self.ldapuidattr+'='+memberid+'))',
+                                              '(&(objectClass=*)('+self.ldapmemberuid+'='+memberid+'))',
                                               attr)
                             self.__loadmembers(res2, moderator)
                         except ldap.NO_SUCH_OBJECT:
@@ -247,13 +248,12 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
 
     def defaults(self):
         """Set default values for options"""
-        if not hasattr(self, 'ldapuidattr'):
-            self.ldapuidattr = 'uid'
+        if not hasattr(self, 'ldapmemberuid'):
+            self.ldapmemberuid = 'uid'
         if not hasattr(self, 'ldapmodgroupdn'):
             self.ldapmodgroupdn = None
         if not hasattr(self, 'alwaysDeliver'):
             self.alwaysDeliver = False
-
 
     #
     # Read interface

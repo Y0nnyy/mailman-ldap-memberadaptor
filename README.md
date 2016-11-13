@@ -27,7 +27,7 @@ def extend(list):
     ldap.ldappasswd = ''                            # bind password for ldapbinddn
     ldap.ldaprefresh = 300                          # refresh time in seconds
     ldap.ldaptls = False                            # use TLS, must be set to True or False
-    ldap.ldapuidattr = 'uid'                        # The attribute name that holds the user id
+    ldap.ldapmemberuid = 'uid'                      # The attribute name that holds the user id
                                                     # (set this to 'distinguishedName' for AD)
     ldap.ldapsearch = '(objectClass=*)'             # your LDAP search here
     ldap.ldapgroupdn = None                         # an optional groupdn if you want only members
