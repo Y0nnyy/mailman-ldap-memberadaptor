@@ -81,7 +81,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
 
     def __loadmembers(self, result, moderator=False):
         for (dn, attrs) in result:
-            if attrs.has_key('mail'):
+            if 'mail' in attrs:
                 mail = attrs['mail'][0].strip()
                 if moderator:
                     self.__mod_members[dn] = True
@@ -133,7 +133,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
             members = l.search_s(groupdn, ldap.SCOPE_SUBTREE,
                 self.ldapsearch, [self.ldapgroupattr])
             for (dn,attrs) in members:
-                if attrs.has_key(self.ldapgroupattr):
+                if self.ldapgroupattr in attrs:
                     memberids = attrs[self.ldapgroupattr]
                     if DEBUG:
                         syslog('debug','regular groupdns = %s' % groupdns)
@@ -141,7 +141,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                         try:
                             res2 = l.search_s(self.ldapbasedn,
                                               ldap.SCOPE_SUBTREE,
-                                              '(&(objectClass=*)(uid='+memberid+'))',
+                                              '(&(objectClass=*)('+self.ldapuidattr+'='+memberid+'))',
                                               attr)
                             self.__loadmembers(res2, moderator)
                         except ldap.NO_SUCH_OBJECT:
@@ -247,6 +247,8 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
 
     def defaults(self):
         """Set default values for options"""
+        if not hasattr(self, 'ldapuidattr'):
+            self.ldapuidattr = 'uid'
         if not hasattr(self, 'ldapmodgroupdn'):
             self.ldapmodgroupdn = None
         if not hasattr(self, 'alwaysDeliver'):
