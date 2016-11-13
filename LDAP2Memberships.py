@@ -301,6 +301,7 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
         return [self.__ldap_get_member_cpe(member) for member in members]
 
     def getMemberPassword(self, member):
+        self.__ldap_load_members()
         self.__syncOldStyleStorage()
 
         member = self.__ldap_member_to_key(member)
