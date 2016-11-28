@@ -383,7 +383,6 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
     def getBouncingMembers(self):
         if self.alwaysDeliver:
              return []
-        member = self.__ldap_member_to_key(member)
         return [member for member in self.__mlist.bounce_info.keys()]
 
     def getBounceInfo(self, member):
