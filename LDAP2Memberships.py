@@ -133,6 +133,9 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                 groupdn = self.ldapgroupdn
             members = l.search_s(groupdn, ldap.SCOPE_SUBTREE,
                 self.ldapsearch, [self.ldapgroupattr])
+            groups = l.search_s(groupdn, ldap.SCOPE_SUBTREE, "cn=*", ['gidNumber'])
+            (dn, attrs) = groups[0]
+            gid = attrs['gidNumber'][0].decode('utf-8')
             for (dn,attrs) in members:
                 if self.ldapgroupattr in attrs:
                     memberids = attrs[self.ldapgroupattr]
@@ -140,9 +143,12 @@ class LDAP2Memberships(MemberAdaptor.MemberAdaptor):
                         syslog('debug','regular groupdns = %s' % groupdns)
                     for memberid in memberids:
                         try:
+                            gidsearch = '|(destinationindicator=' + gid + ')(destinationindicator=' + gid + ',*)(destinationindicator=*,' + gid + ')(destinationindicator=*,' + gid + ',*)'
+                            filter = '(&(objectClass=*)(' + self.ldapmemberuid + '=' + memberid.decode('utf8') + ')(!(' + gidsearch + ')))'
+
                             res2 = l.search_s(self.ldapbasedn,
                                               ldap.SCOPE_SUBTREE,
-                                              '(&(objectClass=*)('+self.ldapmemberuid+'='+memberid+'))',
+                                              filter,
                                               attr)
                             self.__loadmembers(res2, moderator)
                         except ldap.NO_SUCH_OBJECT:
